@@ -1,0 +1,47 @@
+name: Upload release files
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  split_jsonl:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lang_code: ['fr', 'zh']
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: 'xxyzz/Proficiency'
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: sudo apt install -y lbzip2 mecab libmecab-dev
+      - run: python -m pip install .
+      - run: gh release download -D build -p "*.jsonl.bz2"
+      - run: lbunzip2 build/*.bz2
+      - run: split_jsonl build/${{ matrix.lang_code }}_*.jsonl ${{ matrix.lang_code }}
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ github.ref_name }}
+          path: build/**/*.bz2
+
+  upload_files:
+    needs: split_jsonl
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: ${{ github.ref_name }}
+      - run: gh release upload "$(gh release list -L 1 | awk '{print $3}')" **/*.bz2
